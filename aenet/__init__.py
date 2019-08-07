@@ -251,21 +251,3 @@ class AENet:
         print(labels.shape)
         hist=self.model.fit(training_data, labels)
         print(hist.history)
-
-            #     for i in range(n_batch):
-            #         feat = np.append(feat, self.pred_fn(
-            #             mfb[rn_batch + i * self.BATCH_SIZE:rn_batch + (i + 1) * self.BATCH_SIZE]),
-            #                          axis=0)
-
-            #     feat = feat / np.tile(np.linalg.norm(feat, axis=1), (feat.shape[1], 1)).T
-            #     aenet_feat.append(feat)
-            # else:
-            #     aenet_feat.append(None)
-
-            # # Delete the file
-            # os.remove(f)
-
-        # Delete temp dir
-        #os.rmdir(tmp_dir)
-
-        #return aenet_feat
