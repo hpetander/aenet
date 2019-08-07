@@ -6,10 +6,14 @@ import os
 import sys
 import tempfile
 
-import lasagne
-import theano
-from lasagne.layers import Conv2DLayer as ConvLayer
-from lasagne.layers import InputLayer, MaxPool2DLayer, DenseLayer
+from keras.models import Model
+from keras.layers import Dense, Activation, Conv2D, MaxPooling2D, Input, Flatten
+
+
+#import lasagne
+#import theano
+#from lasagne.layers import Conv2DLayer as ConvLayer
+#from lasagne.layers import InputLayer, MaxPool2DLayer, DenseLayer
 from moviepy.editor import VideoFileClip
 
 from . import htkfio
@@ -41,14 +45,15 @@ class AENet:
         self.BATCH_SIZE = BATCH_SIZE
 
         # Build model
-        net = self.build_model()
-
+        self.model = self.build_keras_model()
+        print('Finised building model')
+        
         # Set the pre-trained weights (takes some time)
-        self.set_weights(net['prob'], weight_file)
+        #self.set_weights(net['prob'], weight_file)
 
         # Compile prediction function
-        prediction = lasagne.layers.get_output(net[layer], deterministic=True)
-        self.pred_fn = theano.function([net['input'].input_var], prediction, allow_input_downcast=True)
+        #prediction = lasagne.layers.get_output(net[layer], deterministic=True)
+        #self.pred_fn = train_on_batch(x, y,) theano.function([net['input'].input_var], prediction, allow_input_downcast=True)
 
         if feat_mean is None:
             self.feat_mean = np.load('%s/gmean.npy' % AENET_DATA_DIR)
@@ -64,31 +69,31 @@ class AENet:
         self.HCopyExe = '%s/HCopy' % HTK_ROOT
         self.HConfigFile = '%s/configmfb.hcopy' % HTK_ROOT
 
-    def build_model(self):
-        '''
-        Build Acoustic Event Net model
-        :return:
-        '''
 
-        # A architecture 41 classes
-        nonlin = lasagne.nonlinearities.rectify
-        net = {}
-        net['input'] = InputLayer((None, feat_shape[0], feat_shape[1], feat_shape[2]))  # channel, time. frequency
+    def build_keras_model(self):
+        print(feat_shape)
+        inputs = Input(shape=(feat_shape[0], feat_shape[1], feat_shape[2]))
         # ----------- 1st layer group ---------------
-        net['conv1a'] = ConvLayer(net['input'], num_filters=64, filter_size=(3, 3), stride=1, nonlinearity=nonlin)
-        net['conv1b'] = ConvLayer(net['conv1a'], num_filters=64, filter_size=(3, 3), stride=1, nonlinearity=nonlin)
-        net['pool1'] = MaxPool2DLayer(net['conv1b'], pool_size=(1, 2))  # (time, freq)
-        # ----------- 2nd layer group ---------------
-        net['conv2a'] = ConvLayer(net['pool1'], num_filters=128, filter_size=(3, 3), stride=1, nonlinearity=nonlin)
-        net['conv2b'] = ConvLayer(net['conv2a'], num_filters=128, filter_size=(3, 3), stride=1, nonlinearity=nonlin)
-        net['pool2'] = MaxPool2DLayer(net['conv2b'], pool_size=(2, 2))  # (time, freq)
+        x = Conv2D(filters=64, kernel_size=(3,3), strides=1, padding='same', activation='relu')(inputs)
+        x = Conv2D(filters=64, kernel_size=(3,3), strides=1, padding='same', activation='relu')(x)
+        x = MaxPooling2D(pool_size=(1, 2))(x)
         # ----------- fully connected layer group ---------------
-        net['fc5'] = DenseLayer(net['pool2'], num_units=1024, nonlinearity=nonlin)
-        net['fc6'] = DenseLayer(net['fc5'], num_units=1024, nonlinearity=nonlin)
-        net['prob'] = DenseLayer(net['fc6'], num_units=41, nonlinearity=lasagne.nonlinearities.softmax)
+        x = Conv2D(filters=128, kernel_size=(3,3), strides=1, padding='same', activation='relu')(x)
+        x = Conv2D(filters=128, kernel_size=(3,3), strides=1, padding='same',activation='relu')(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        # ----------- fully connected layer group ---------------
+        x = Flatten()(x)
+        x = Dense(1024, activation="relu")(x)
+        x = Dense(1024, activation="relu")(x)
+        x = Dense(41, activation="relu")(x)
+        predictions = Dense(1, activation="sigmoid")(x)
+        model = Model(inputs=inputs, outputs=predictions)
+        model.compile(optimizer='adam',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+        print(model.summary())
 
-        return net
-
+        return model
     def set_weights(self, net, model_file):
         '''
         Sets the parameters of the model using the weights stored in model_file
@@ -108,7 +113,7 @@ class AENet:
             logger.info('Load pretrained weights from %s ...' % model_file)
             model = cPickle.load(f)
         logger.info('Set the weights...')
-        lasagne.layers.set_all_param_values(net, model['param_values'], trainable=True)
+        #lasagne.layers.set_all_param_values(net, model['param_values'], trainable=True)
 
     def write_wav(self, video_obj, target_wav_file):
         '''
@@ -198,7 +203,7 @@ class AENet:
 
         return np.swapaxes(feats, 1, 2)
 
-    def feat_extract(self, wavfilelist, shift=100):
+    def train(self, wavfilelist, labels, shift=100):
         '''
         :param wavfilelist: list of wave files, 16kHz, 16bit, mono
         :param shift: number of frames to shift input patch. 1 frame = 10 msec in 16kHz
@@ -220,33 +225,47 @@ class AENet:
         self.extract_fbank_htk(scriptfile=tmp_file)
         os.remove(tmp_file)
 
+        training_data = None
+        labels = None
+
         aenet_feat = []
         for f in mfb_files:
             if os.path.exists(f):
+                print(f)
                 mfb = self.get_feat_sequence(htkfile=f, shift=shift)
+                if training_data is None:
+                    training_data = mfb
+                else:
+                    training_data = np.append(training_data, mfb, axis=0)
+                if '0.mfb' in f:
+                    label_val = 0.0
+                else:
+                    label_val = 1.0
+                labels_curr = np.full(mfb.shape[0], label_val)
+                if labels is None:
+                    labels = labels_curr
+                else:
+                    labels=np.append(labels, labels_curr, axis=0)
 
-                # AENet features
-                n_batch = len(mfb) / self.BATCH_SIZE
-                rn_batch = len(mfb) % self.BATCH_SIZE
-                if rn_batch == 0:
-                    rn_batch = self.BATCH_SIZE
-                    n_batch -= 1
+        print(training_data.shape)
+        print(labels.shape)
+        hist=self.model.fit(training_data, labels)
+        print(hist.history)
 
-                feat = self.pred_fn(mfb[:rn_batch])
-                for i in range(n_batch):
-                    feat = np.append(feat, self.pred_fn(
-                        mfb[rn_batch + i * self.BATCH_SIZE:rn_batch + (i + 1) * self.BATCH_SIZE]),
-                                     axis=0)
+            #     for i in range(n_batch):
+            #         feat = np.append(feat, self.pred_fn(
+            #             mfb[rn_batch + i * self.BATCH_SIZE:rn_batch + (i + 1) * self.BATCH_SIZE]),
+            #                          axis=0)
 
-                feat = feat / np.tile(np.linalg.norm(feat, axis=1), (feat.shape[1], 1)).T
-                aenet_feat.append(feat)
-            else:
-                aenet_feat.append(None)
+            #     feat = feat / np.tile(np.linalg.norm(feat, axis=1), (feat.shape[1], 1)).T
+            #     aenet_feat.append(feat)
+            # else:
+            #     aenet_feat.append(None)
 
-            # Delete the file
-            os.remove(f)
+            # # Delete the file
+            # os.remove(f)
 
         # Delete temp dir
-        os.rmdir(tmp_dir)
+        #os.rmdir(tmp_dir)
 
-        return aenet_feat
+        #return aenet_feat
