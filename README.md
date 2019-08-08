@@ -6,7 +6,7 @@ Paper: (https://arxiv.org/abs/1701.00599)
 ## Requirements ##
 
 * Python 2
-* Lasagne (https://github.com/Lasagne/Lasagne)
+* Keras
 * HCopy from HTK (http://htk.eng.cam.ac.uk/)
 
 ## How to use ##
@@ -16,16 +16,11 @@ Paper: (https://arxiv.org/abs/1701.00599)
 * Define the path where you want to keep your models with
  ``export AENET_DATA_DIR='YOUR_DATA_PATH'``
 
-#### Run example ####
-Run ``python run_sample.py`` to test the installation and see how to use the code.
-
-* This sample program reads wave files and stores corresponding AENet features in "ae_feat".
 * For testing your installation, the sample program also displays the error between your extraction and a reference.
 * If you got a high error, it might be due to the installtion of "HCopy".
 
 #### Install as a package ####
 * Make sure to have set the data directory: ``AENET_DATA_DIR``
-* Download the model files by running ``bin/download.sh``
 * Install the package with ``python setup.py install``
 * Now you can use it via ``import aenet``
 
