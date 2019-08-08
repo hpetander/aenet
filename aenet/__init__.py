@@ -202,8 +202,40 @@ class AENet:
         feats = feats.reshape([input_shape[0], input_shape[2], input_shape[1], input_shape[3]])
 
         return np.swapaxes(feats, 1, 2)
+    def predict(self, wavfile, shift=100):
+        '''
+        :param wavfilelist: list of wave files, 16kHz, 16bit, mono
+        :param shift: number of frames to shift input patch. 1 frame = 10 msec in 16kHz
+        :return: list of sequences of AENet features
+        '''
 
-    def train(self, wavfilelist, labels, shift=100):
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = tempfile.mktemp(suffix='scp')
+
+        mfb_files = []
+        with open(tmp_file, 'w') as f:
+            wf = wavfile.rstrip()
+            mfb_files.append('%s/%s' % (tmp_dir, ntpath.basename(wf).replace('.wav', '.mfb')))
+            f.write(wf + ' ' + mfb_files[-1] + '\n')
+
+        # extract mel filter bank output
+        self.extract_fbank_htk(scriptfile=tmp_file)
+        os.remove(tmp_file)
+
+        labels = []
+
+        for f in mfb_files:
+            if os.path.exists(f):
+                print(f)
+                mfb = self.get_feat_sequence(htkfile=f, shift=shift)
+                labels = self.model.predict(mfb)
+        
+        print(mfb.shape)
+        print(labels.shape)
+        return labels
+        
+
+    def train(self, wavfilelist, labels, shift=100, epochs=5):
         '''
         :param wavfilelist: list of wave files, 16kHz, 16bit, mono
         :param shift: number of frames to shift input patch. 1 frame = 10 msec in 16kHz
@@ -249,5 +281,6 @@ class AENet:
 
         print(training_data.shape)
         print(labels.shape)
-        hist=self.model.fit(training_data, labels)
+        hist=self.model.fit(training_data, labels, epochs=epochs)
         print(hist.history)
+        return self.model
